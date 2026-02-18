@@ -28,15 +28,10 @@ func run(pass *analysis.Pass) (any, error) {
 			if len(node.Args) == 0 {
 				return true
 			}
-			lit, ok := getStringLiteral(node)
-			if !ok {
-				return true
-			}
 
-			r, _ := utf8.DecodeRuneInString(lit)
-			if unicode.IsUpper(r) {
-				pass.Reportf(node.Args[0].Pos(), "log messages must start with lowercase letter")
-			}
+			checkStartsWithUpper(pass, node)
+
+			checkNotAllowedSymbols(pass, node)
 
 			return true
 		})
@@ -69,6 +64,7 @@ func isLinted(pass *analysis.Pass, expr *ast.SelectorExpr) bool {
 	return pkgPath == "log/slog" || pkgPath == "go.uber.org/zap"
 }
 
+// getPackagePath возвращает путь к пакету, в котором определен логгер.
 func getPackagePath(pass *analysis.Pass, expr ast.Expr) string {
 	ident, ok := expr.(*ast.Ident)
 	if !ok {
@@ -95,6 +91,50 @@ func getPackagePath(pass *analysis.Pass, expr ast.Expr) string {
 	}
 
 	return ""
+}
+
+// checkStartsWithUpper проверяет что лог-сообещние не начинается
+// с заглавной буквы.
+func checkStartsWithUpper(pass *analysis.Pass, expr *ast.CallExpr) {
+	lit, ok := getStringLiteral(expr)
+	if !ok {
+		return
+	}
+
+	r, _ := utf8.DecodeRuneInString(lit)
+	if unicode.IsUpper(r) {
+		pass.Reportf(expr.Args[0].Pos(), "log messages must start with lowercase letter")
+	}
+}
+
+// checkNotAllowedSymbols проверяет что лог-сообщение не содержит
+// нелатинских и специальных символов.
+func checkNotAllowedSymbols(pass *analysis.Pass, expr *ast.CallExpr) {
+	lit, ok := getStringLiteral(expr)
+	if !ok {
+		return
+	}
+
+	var hasNonLatin, hasSpecial bool
+	for _, r := range lit {
+		if (r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') ||
+			r == ' ' {
+			continue
+		}
+		if unicode.IsLetter(r) {
+			hasNonLatin = true
+		} else {
+			hasSpecial = true
+		}
+	}
+	if hasNonLatin {
+		pass.Reportf(expr.Args[0].Pos(), "log messages must only contains latin letters")
+	}
+	if hasSpecial {
+		pass.Reportf(expr.Args[0].Pos(), "log messages must not contains any special symbols")
+	}
 }
 
 // Возвращает строковый литерал первого аргумента функции без кавычек
