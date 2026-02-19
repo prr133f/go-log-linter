@@ -5,37 +5,42 @@ import (
 	"go/token"
 	"go/types"
 	"strconv"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/ast/inspector"
 )
 
 func run(pass *analysis.Pass) (any, error) {
-	for _, file := range pass.Files {
-		ast.Inspect(file, func(n ast.Node) bool {
-			node, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			sel, ok := node.Fun.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-			if ok := isLinted(pass, sel); !ok {
-				return true
-			}
-			if len(node.Args) == 0 {
-				return true
-			}
-
-			checkStartsWithUpper(pass, node)
-
-			checkNotAllowedSymbols(pass, node)
-
-			return true
-		})
+	insp := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	nodeFilter := []ast.Node{
+		(*ast.CallExpr)(nil),
 	}
+	insp.Preorder(nodeFilter, func(n ast.Node) {
+		node, ok := n.(*ast.CallExpr)
+		if !ok {
+			return
+		}
+		sel, ok := node.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return
+		}
+		if ok := isLinted(pass, sel); !ok {
+			return
+		}
+		if len(node.Args) == 0 {
+			return
+		}
+
+		checkStartsWithUpper(pass, node)
+
+		checkNotAllowedSymbols(pass, node)
+
+		checkSensitiveData(pass, node.Args[0])
+	})
 	return nil, nil
 }
 
@@ -135,6 +140,63 @@ func checkNotAllowedSymbols(pass *analysis.Pass, expr *ast.CallExpr) {
 	if hasSpecial {
 		pass.Reportf(expr.Args[0].Pos(), "log messages must not contains any special symbols")
 	}
+}
+
+// sensitivePatterns содержит подстроки имён переменных,
+// указывающие на потенциально чувствительные данные
+var sensitivePatterns = []string{
+	"token",
+	"password",
+	"passwd",
+	"secret",
+	"apikey",
+	"credential",
+	"auth",
+	"private",
+}
+
+// checkSensitiveData проверяет, не конкатенируется ли в лог-сообщение
+// переменная с потенциально чувствительным именем
+func checkSensitiveData(pass *analysis.Pass, expr ast.Expr) {
+	binExpr, ok := expr.(*ast.BinaryExpr)
+	if !ok || binExpr.Op != token.ADD {
+		return
+	}
+
+	idents := collectIdents(binExpr)
+
+	for _, ident := range idents {
+		name := strings.ToLower(ident.Name)
+		for _, pattern := range sensitivePatterns {
+			if strings.Contains(name, pattern) {
+				pass.Reportf(ident.Pos(),
+					"potentially sensitive data %q is concatenated into log message",
+					ident.Name,
+				)
+				break
+			}
+		}
+	}
+}
+
+// collectIdents рекурсивно собирает все идентификаторы переменных
+// из дерева конкатенации (вложенных BinaryExpr с token.ADD)
+func collectIdents(expr ast.Expr) []*ast.Ident {
+	var idents []*ast.Ident
+	var walk func(ast.Expr)
+	walk = func(e ast.Expr) {
+		switch e := e.(type) {
+		case *ast.BinaryExpr:
+			if e.Op == token.ADD {
+				walk(e.X)
+				walk(e.Y)
+			}
+		case *ast.Ident:
+			idents = append(idents, e)
+		}
+	}
+	walk(expr)
+	return idents
 }
 
 // Возвращает строковый литерал первого аргумента функции без кавычек
