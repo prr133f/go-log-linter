@@ -15,9 +15,9 @@ func some() {
 	log.Info("hello")
 
 	// Логи содержат исключительно латинские буквы
-	slog.Warn("привет") // want "log messages must only contains latin letters"
+	slog.Warn("привeт") // want "log messages must only contains latin letters"
 	slog.Debug("heLlo1")
-	log.Fatal("привет") // want "log messages must only contains latin letters"
+	log.Fatal("привeт") // want "log messages must only contains latin letters"
 	log.Info("heLlo1")
 
 	// Никаких спецсимволов

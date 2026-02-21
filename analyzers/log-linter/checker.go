@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -108,7 +109,24 @@ func checkStartsWithUpper(pass *analysis.Pass, expr *ast.CallExpr) {
 
 	r, _ := utf8.DecodeRuneInString(lit)
 	if unicode.IsUpper(r) {
-		pass.Reportf(expr.Args[0].Pos(), "log messages must start with lowercase letter")
+		// pass.Reportf(expr.Args[0].Pos(), "log messages must start with lowercase letter")
+		pass.Report(analysis.Diagnostic{
+			Pos:     expr.Args[0].Pos(),
+			End:     expr.Args[0].End(),
+			Message: "log messages must start with lowercase letter",
+			SuggestedFixes: []analysis.SuggestedFix{
+				{
+					Message: fmt.Sprintf("letter %s must be lowercase", string(r)),
+					TextEdits: []analysis.TextEdit{
+						{
+							Pos:     expr.Args[0].Pos() + 1,
+							End:     expr.Args[0].Pos() + 1 + token.Pos(utf8.RuneLen(r)),
+							NewText: []byte(string(unicode.ToLower(r))),
+						},
+					},
+				},
+			},
+		})
 	}
 }
 
@@ -135,15 +153,72 @@ func checkNotAllowedSymbols(pass *analysis.Pass, expr *ast.CallExpr) {
 		}
 	}
 	if hasNonLatin {
-		pass.Reportf(expr.Args[0].Pos(), "log messages must only contains latin letters")
+		pass.Report(analysis.Diagnostic{
+			Pos:     expr.Args[0].Pos(),
+			End:     expr.Args[0].End(),
+			Message: "log messages must only contains latin letters",
+			SuggestedFixes: []analysis.SuggestedFix{
+				{
+					Message: "remove non-latin characters",
+					TextEdits: []analysis.TextEdit{
+						{
+							Pos:     expr.Args[0].Pos(),
+							End:     expr.Args[0].End(),
+							NewText: []byte(strconv.Quote(removeNonLatin(lit))),
+						},
+					},
+				},
+			},
+		})
 	}
 	if hasSpecial {
-		pass.Reportf(expr.Args[0].Pos(), "log messages must not contains any special symbols")
+		pass.Report(analysis.Diagnostic{
+			Pos:     expr.Args[0].Pos(),
+			End:     expr.Args[0].End(),
+			Message: "log messages must not contains any special symbols",
+			SuggestedFixes: []analysis.SuggestedFix{
+				{
+					Message: "remove special symbols",
+					TextEdits: []analysis.TextEdit{
+						{
+							Pos:     expr.Args[0].Pos(),
+							End:     expr.Args[0].End(),
+							NewText: []byte(strconv.Quote(removeSpecialSymbols(lit))),
+						},
+					},
+				},
+			},
+		})
 	}
 }
 
-// sensitivePatterns содержит подстроки имён переменных,
-// указывающие на потенциально чувствительные данные
+// removeNonLatin удаляет из строки все символы, не являющиеся
+// латинскими буквами, цифрами или пробелами.
+func removeNonLatin(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') ||
+			r == ' ' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// removeSpecialSymbols удаляет из строки все символы, не являющиеся
+// буквами (любого алфавита), цифрами или пробелами.
+func removeSpecialSymbols(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == ' ' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 var sensitivePatterns = []string{
 	"token",
 	"password",
