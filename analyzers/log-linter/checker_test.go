@@ -463,7 +463,7 @@ func TestCheckSensitiveData(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pass, diags := collectDiagnostics()
-			checkSensitiveData(pass, tt.expr)
+			checkSensitiveData(pass, tt.expr, defaultSensitivePatterns)
 			if len(*diags) != tt.wantDiags {
 				t.Fatalf("got %d diagnostics, want %d: %v", len(*diags), tt.wantDiags, messages(*diags))
 			}

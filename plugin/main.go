@@ -10,14 +10,33 @@ func init() {
 	register.Plugin("loglinter", New)
 }
 
-func New(settings any) (register.LinterPlugin, error) {
-	return LogLinterPlugin{}, nil
+type Settings struct {
+	SensitivePatterns []string `json:"sensitivePatterns"`
 }
 
-type LogLinterPlugin struct{}
+func New(settings any) (register.LinterPlugin, error) {
+	var s Settings
+	if settings != nil {
+		var err error
+		s, err = register.DecodeSettings[Settings](settings)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return LogLinterPlugin{settings: s}, nil
+}
+
+type LogLinterPlugin struct {
+	settings Settings
+}
 
 func (p LogLinterPlugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
-	return []*analysis.Analyzer{analyzer.New()}, nil
+	return []*analysis.Analyzer{
+		analyzer.New(analyzer.Config{
+			SensitivePatterns: p.settings.SensitivePatterns,
+		}),
+	}, nil
 }
 
 func (p LogLinterPlugin) GetLoadMode() string {

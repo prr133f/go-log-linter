@@ -15,34 +15,34 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 )
 
-func run(pass *analysis.Pass) (any, error) {
-	insp := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	nodeFilter := []ast.Node{
-		(*ast.CallExpr)(nil),
+func makeRun(cfg Config) func(*analysis.Pass) (any, error) {
+	return func(pass *analysis.Pass) (any, error) {
+		insp := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+		nodeFilter := []ast.Node{
+			(*ast.CallExpr)(nil),
+		}
+		insp.Preorder(nodeFilter, func(n ast.Node) {
+			node, ok := n.(*ast.CallExpr)
+			if !ok {
+				return
+			}
+			sel, ok := node.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return
+			}
+			if ok := isLinted(pass, sel); !ok {
+				return
+			}
+			if len(node.Args) == 0 {
+				return
+			}
+
+			checkStartsWithUpper(pass, node)
+			checkNotAllowedSymbols(pass, node)
+			checkSensitiveData(pass, node.Args[0], cfg.SensitivePatterns)
+		})
+		return nil, nil
 	}
-	insp.Preorder(nodeFilter, func(n ast.Node) {
-		node, ok := n.(*ast.CallExpr)
-		if !ok {
-			return
-		}
-		sel, ok := node.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return
-		}
-		if ok := isLinted(pass, sel); !ok {
-			return
-		}
-		if len(node.Args) == 0 {
-			return
-		}
-
-		checkStartsWithUpper(pass, node)
-
-		checkNotAllowedSymbols(pass, node)
-
-		checkSensitiveData(pass, node.Args[0])
-	})
-	return nil, nil
 }
 
 // Определяет родительский пакет логгера, а также вызванный у него метод.
@@ -219,20 +219,20 @@ func removeSpecialSymbols(s string) string {
 	return b.String()
 }
 
-var sensitivePatterns = []string{
-	"token",
-	"password",
-	"passwd",
-	"secret",
-	"apikey",
-	"credential",
-	"auth",
-	"private",
-}
+// var sensitivePatterns = []string{
+// 	"token",
+// 	"password",
+// 	"passwd",
+// 	"secret",
+// 	"apikey",
+// 	"credential",
+// 	"auth",
+// 	"private",
+// }
 
 // checkSensitiveData проверяет, не конкатенируется ли в лог-сообщение
 // переменная с потенциально чувствительным именем
-func checkSensitiveData(pass *analysis.Pass, expr ast.Expr) {
+func checkSensitiveData(pass *analysis.Pass, expr ast.Expr, patterns []string) {
 	binExpr, ok := expr.(*ast.BinaryExpr)
 	if !ok || binExpr.Op != token.ADD {
 		return
@@ -242,7 +242,7 @@ func checkSensitiveData(pass *analysis.Pass, expr ast.Expr) {
 
 	for _, ident := range idents {
 		name := strings.ToLower(ident.Name)
-		for _, pattern := range sensitivePatterns {
+		for _, pattern := range patterns {
 			if strings.Contains(name, pattern) {
 				pass.Reportf(ident.Pos(),
 					"potentially sensitive data %q is concatenated into log message",
