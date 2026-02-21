@@ -14,7 +14,7 @@ version: v2.10.1
 plugins:
   - module: "github.com/prr133f/go-log-linter"
     import: "github.com/prr133f/go-log-linter/plugin"
-    version: v0.1.1
+    version: v0.1.2
 ```
 2. Включите линтер в конфигурации golangci-lint:
 ```yaml
