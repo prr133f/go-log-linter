@@ -37,6 +37,19 @@ golangci-lint custom -c .custom-gcl.yml -v
 ./custom-gcl run -c .golangci.yml ./... 
 ```
 
+# Конфигурация
+Линтер может быть сконфигурирован для кастомных паттернов проверки потенциально чувствительных данных в логах.
+Для этого укажите их в настройках golangci-lint:
+```yaml
+#...
+settings:
+  custom:
+    loglinter:
+      sensitivePatterns:
+        - token
+        - password
+```
+
 # Пример работы
 <img width="1467" height="896" alt="изображение" src="https://github.com/user-attachments/assets/ab3c0cc9-92ed-48de-8470-638a0a41724f" />
 Файл на котором проходила проверка расположен в ./analyzers/log-linter/testdata
